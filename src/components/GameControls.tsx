@@ -6,6 +6,7 @@ interface GameControlsProps {
   timeLeft: number;
   round: number;
   gameOver: boolean;
+  gameName: string;
   players: Array<{
     id: number;
     score: number;
@@ -20,6 +21,7 @@ const GameControls = ({
   timeLeft,
   round,
   gameOver,
+  gameName,
   players,
   onNewRound,
   onRestart,
@@ -34,10 +36,11 @@ const GameControls = ({
 
   // Находим победителя
   const winner = gameOver ? players.find(p => p.isWinner) : null;
+  const hasWinner = Boolean(winner);
 
   return (
     <div className="bg-white p-3 shadow-md">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-4">
           <Button 
             variant="ghost" 
@@ -48,8 +51,10 @@ const GameControls = ({
             <Icon name="Home" size={20} />
           </Button>
           
-          <div className="text-sm font-medium">
-            Раунд: <span className="font-bold">{round}</span>
+          <div className="text-sm font-medium flex items-center gap-2">
+            <span className="font-bold text-indigo-700">{gameName}</span>
+            <span className="text-gray-500">•</span>
+            <span>Раунд: <span className="font-bold">{round}</span></span>
           </div>
         </div>
         
@@ -85,7 +90,7 @@ const GameControls = ({
       {gameOver && (
         <div className="mt-2 pt-2 border-t border-gray-200">
           <div className="text-center text-lg font-bold">
-            {winner ? (
+            {hasWinner ? (
               <span>
                 Победил Игрок {winner.id} с результатом {winner.score} {winner.score === 1 ? "очко" : winner.score < 5 ? "очка" : "очков"}!
               </span>

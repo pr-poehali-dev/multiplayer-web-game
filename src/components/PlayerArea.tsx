@@ -25,16 +25,29 @@ const PlayerArea = ({ player, updateScore, gameOver }: PlayerProps) => {
     }
   }, [player.targetNumber]);
 
-  // Функция для создания сетки кнопок
+  // Функция для создания сетки кнопок, гарантирующая наличие целевого числа
   const regenerateGrid = () => {
-    // Создаем массив чисел от 1 до 4 и перемешиваем их
+    if (player.targetNumber === null) return;
+
+    // Создаем массив чисел от 1 до 4
     const numbers = [1, 2, 3, 4];
     const grid: number[] = [];
     
     // Создаем сетку 3x4 (12 кнопок)
     for (let i = 0; i < 12; i++) {
-      const randomIndex = Math.floor(Math.random() * numbers.length);
-      grid.push(numbers[randomIndex]);
+      // Для первых 3 кнопок гарантируем, что целевое число будет на поле
+      if (i < 3) {
+        grid.push(player.targetNumber);
+      } else {
+        const randomIndex = Math.floor(Math.random() * numbers.length);
+        grid.push(numbers[randomIndex]);
+      }
+    }
+    
+    // Перемешиваем сетку
+    for (let i = grid.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [grid[i], grid[j]] = [grid[j], grid[i]];
     }
     
     setButtonsGrid(grid);
