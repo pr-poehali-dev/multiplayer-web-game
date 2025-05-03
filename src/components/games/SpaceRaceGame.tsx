@@ -1,6 +1,7 @@
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import PlayerArea from "@/components/PlayerArea";
 
 interface SpaceRaceGameProps {
   player: {
@@ -13,405 +14,337 @@ interface SpaceRaceGameProps {
   gameOver: boolean;
 }
 
-type SpaceShip = {
-  position: number; // от 0 до 100 (вертикальная позиция)
-  lane: number; // полоса движения
-  isBoosting: boolean;
-};
-
-type Obstacle = {
+interface Obstacle {
   id: number;
-  position: number; // от -20 до 100 (вертикальная позиция)
-  lane: number; // полоса движения
-  size: number; // размер препятствия 
-  passed: boolean;
-};
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
-type Star = {
+interface Collectible {
   id: number;
-  position: number;
-  lane: number;
-  collected: boolean;
-};
+  x: number;
+  y: number;
+  type: 'star' | 'fuel' | 'bonus';
+  value: number;
+}
 
 const SpaceRaceGame = ({ player, updateScore, gameOver }: SpaceRaceGameProps) => {
-  const [ship, setShip] = useState<SpaceShip>({ position: 80, lane: 1, isBoosting: false });
+  const [shipPosition, setShipPosition] = useState(50);
   const [obstacles, setObstacles] = useState<Obstacle[]>([]);
-  const [stars, setStars] = useState<Star[]>([]);
-  const [distanceTraveled, setDistanceTraveled] = useState(0);
-  const [collisions, setCollisions] = useState(0);
-  const [starsCollected, setStarsCollected] = useState(0);
-  const [speed, setSpeed] = useState(1.5);
+  const [collectibles, setCollectibles] = useState<Collectible[]>([]);
+  const [gameSpeed, setGameSpeed] = useState(1);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [distance, setDistance] = useState(0);
+  const [lastObstacleTime, setLastObstacleTime] = useState(0);
+  const [lastCollectibleTime, setLastCollectibleTime] = useState(0);
   
-  const gameLoopRef = useRef<number | null>(null);
-  const obstacleIdRef = useRef(0);
-  const starIdRef = useRef(0);
-  const lastObstacleTimeRef = useRef(0);
-  const lastStarTimeRef = useRef(0);
+  const shipRef = useRef<HTMLDivElement>(null);
+  const animationRef = useRef<number | null>(null);
+  const lastTimeRef = useRef<number>(0);
   
-  // Инициализация игры
+  // Обработка столкновений с препятствиями и сбор предметов
+  const checkCollisions = useCallback(() => {
+    if (!shipRef.current || !isPlaying) return;
+    
+    const shipRect = shipRef.current.getBoundingClientRect();
+    
+    // Проверка столкновений с препятствиями
+    const collision = obstacles.some(obstacle => {
+      const obstacleElement = document.getElementById(`obstacle-${player.id}-${obstacle.id}`);
+      if (!obstacleElement) return false;
+      
+      const obstacleRect = obstacleElement.getBoundingClientRect();
+      
+      return !(
+        shipRect.right < obstacleRect.left || 
+        shipRect.left > obstacleRect.right || 
+        shipRect.bottom < obstacleRect.top || 
+        shipRect.top > obstacleRect.bottom
+      );
+    });
+    
+    if (collision) {
+      updateScore(player.id, -1);
+      // Не останавливаем игру, просто снимаем очки
+    }
+    
+    // Сбор предметов
+    const collected = collectibles.filter(collectible => {
+      const collectibleElement = document.getElementById(`collectible-${player.id}-${collectible.id}`);
+      if (!collectibleElement) return false;
+      
+      const collectibleRect = collectibleElement.getBoundingClientRect();
+      
+      return !(
+        shipRect.right < collectibleRect.left || 
+        shipRect.left > collectibleRect.right || 
+        shipRect.bottom < collectibleRect.top || 
+        shipRect.top > collectibleRect.bottom
+      );
+    });
+    
+    if (collected.length > 0) {
+      collected.forEach(item => {
+        updateScore(player.id, item.value);
+      });
+      
+      // Удаляем собранные предметы
+      setCollectibles(prev => prev.filter(item => !collected.includes(item)));
+    }
+  }, [obstacles, collectibles, player.id, updateScore, isPlaying]);
+
+  // Основной игровой цикл
+  const gameLoop = useCallback((timestamp: number) => {
+    if (!isPlaying) return;
+    
+    const deltaTime = timestamp - lastTimeRef.current;
+    lastTimeRef.current = timestamp;
+    
+    // Увеличиваем пройденное расстояние
+    setDistance(prev => {
+      const newDistance = prev + deltaTime * 0.01 * gameSpeed;
+      // Увеличиваем скорость игры со временем
+      if (Math.floor(newDistance / 100) > Math.floor(prev / 100)) {
+        setGameSpeed(prev => Math.min(prev + 0.1, 3));
+      }
+      return newDistance;
+    });
+    
+    // Перемещаем препятствия
+    setObstacles(prev => {
+      // Удаляем препятствия, которые вышли за пределы экрана
+      const filtered = prev.filter(obstacle => obstacle.y < 100);
+      
+      // Перемещаем оставшиеся препятствия
+      return filtered.map(obstacle => ({
+        ...obstacle,
+        y: obstacle.y + deltaTime * 0.05 * gameSpeed
+      }));
+    });
+    
+    // Перемещаем собираемые предметы
+    setCollectibles(prev => {
+      // Удаляем предметы, которые вышли за пределы экрана
+      const filtered = prev.filter(item => item.y < 100);
+      
+      // Перемещаем оставшиеся предметы
+      return filtered.map(item => ({
+        ...item,
+        y: item.y + deltaTime * 0.04 * gameSpeed
+      }));
+    });
+    
+    // Создаем новые препятствия
+    if (timestamp - lastObstacleTime > 1500 / gameSpeed) {
+      setLastObstacleTime(timestamp);
+      
+      const newObstacle: Obstacle = {
+        id: Date.now(),
+        x: Math.random() * 70 + 10, // Позиция по X (от 10% до 80%)
+        y: -10, // Начальная позиция выше экрана
+        width: Math.random() * 20 + 10, // Ширина от 10% до 30%
+        height: Math.random() * 5 + 3 // Высота от 3% до 8%
+      };
+      
+      setObstacles(prev => [...prev, newObstacle]);
+    }
+    
+    // Создаем новые собираемые предметы
+    if (timestamp - lastCollectibleTime > 2000 / gameSpeed) {
+      setLastCollectibleTime(timestamp);
+      
+      const types: Array<'star' | 'fuel' | 'bonus'> = ['star', 'fuel', 'bonus'];
+      const type = types[Math.floor(Math.random() * types.length)];
+      
+      const values = {
+        star: 1,
+        fuel: 2,
+        bonus: 5
+      };
+      
+      const newCollectible: Collectible = {
+        id: Date.now(),
+        x: Math.random() * 80 + 10, // Позиция по X (от 10% до 90%)
+        y: -5, // Начальная позиция выше экрана
+        type,
+        value: values[type]
+      };
+      
+      setCollectibles(prev => [...prev, newCollectible]);
+    }
+    
+    // Проверяем столкновения
+    checkCollisions();
+    
+    // Продолжаем цикл
+    animationRef.current = requestAnimationFrame(gameLoop);
+  }, [isPlaying, gameSpeed, lastObstacleTime, lastCollectibleTime, checkCollisions]);
+
+  // Начало/остановка игры
   useEffect(() => {
     if (player.isActive && !gameOver) {
-      startGame();
+      setIsPlaying(true);
+    } else {
+      setIsPlaying(false);
+    }
+  }, [player.isActive, gameOver]);
+
+  // Управление игровым циклом
+  useEffect(() => {
+    if (isPlaying && !animationRef.current) {
+      lastTimeRef.current = performance.now();
+      animationRef.current = requestAnimationFrame(gameLoop);
+    } else if (!isPlaying && animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
     }
     
     return () => {
-      if (gameLoopRef.current) {
-        cancelAnimationFrame(gameLoopRef.current);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
       }
     };
-  }, [player.isActive, gameOver]);
-  
-  // Запуск игры
-  const startGame = () => {
-    setShip({ position: 80, lane: 1, isBoosting: false });
-    setObstacles([]);
-    setStars([]);
-    setDistanceTraveled(0);
-    setCollisions(0);
-    setStarsCollected(0);
-    setSpeed(1.5);
+  }, [isPlaying, gameLoop]);
+
+  // Управление кораблем
+  const moveShip = (direction: 'left' | 'right') => {
+    if (!isPlaying) return;
     
-    gameLoop(performance.now());
-  };
-  
-  // Игровой цикл
-  const gameLoop = (timestamp: number) => {
-    // Движение корабля
-    setShip(prevShip => ({
-      ...prevShip,
-      position: Math.max(0, prevShip.position - (prevShip.isBoosting ? 0.3 : 0.1)),
-    }));
-    
-    // Создаем новые препятствия
-    if (timestamp - lastObstacleTimeRef.current > 1500) { // Каждые 1.5 секунды
-      const lane = Math.floor(Math.random() * 3);
-      
-      setObstacles(prev => [
-        ...prev,
-        {
-          id: obstacleIdRef.current++,
-          position: -20,
-          lane,
-          size: Math.floor(Math.random() * 3) + 1, // Размер 1-3
-          passed: false
-        }
-      ]);
-      
-      lastObstacleTimeRef.current = timestamp;
-    }
-    
-    // Создаем звезды (бонусы)
-    if (timestamp - lastStarTimeRef.current > 3000) { // Каждые 3 секунды
-      const lane = Math.floor(Math.random() * 3);
-      
-      setStars(prev => [
-        ...prev,
-        {
-          id: starIdRef.current++,
-          position: -10,
-          lane,
-          collected: false
-        }
-      ]);
-      
-      lastStarTimeRef.current = timestamp;
-    }
-    
-    // Движение препятствий и проверка столкновений
-    setObstacles(prev => {
-      const newObstacles = prev.map(obstacle => {
-        // Движение препятствия
-        const newPosition = obstacle.position + speed;
-        
-        // Проверка столкновений
-        if (!obstacle.passed && 
-            obstacle.lane === ship.lane && 
-            newPosition >= ship.position - 10 && 
-            newPosition <= ship.position + 10) {
-          handleCollision();
-          return { ...obstacle, passed: true };
-        }
-        
-        // Подсчет пройденных препятствий
-        if (!obstacle.passed && newPosition > ship.position + 15) {
-          handleObstaclePassed();
-          return { ...obstacle, passed: true };
-        }
-        
-        return { ...obstacle, position: newPosition };
-      }).filter(obstacle => obstacle.position < 120); // Удаляем препятствия, вышедшие за экран
-      
-      return newObstacles;
+    setShipPosition(prev => {
+      if (direction === 'left') {
+        return Math.max(prev - 5, 0);
+      } else {
+        return Math.min(prev + 5, 100);
+      }
     });
-    
-    // Движение звезд и проверка сбора
-    setStars(prev => {
-      const newStars = prev.map(star => {
-        // Движение звезды
-        const newPosition = star.position + speed;
-        
-        // Проверка сбора звезды
-        if (!star.collected && 
-            star.lane === ship.lane && 
-            newPosition >= ship.position - 10 && 
-            newPosition <= ship.position + 10) {
-          handleStarCollected();
-          return { ...star, collected: true };
-        }
-        
-        return { ...star, position: newPosition };
-      }).filter(star => !star.collected && star.position < 120); // Удаляем собранные и вышедшие за экран звезды
-      
-      return newStars;
-    });
-    
-    // Увеличиваем пройденное расстояние
-    setDistanceTraveled(prev => prev + speed / 10);
-    
-    // Увеличиваем скорость со временем
-    if (distanceTraveled % 10 < speed / 10) {
-      setSpeed(prev => Math.min(prev + 0.1, 5));
-    }
-    
-    // Продолжаем цикл
-    if (!gameOver) {
-      gameLoopRef.current = requestAnimationFrame(gameLoop);
-    }
   };
-  
-  // Обработка столкновения с препятствием
-  const handleCollision = () => {
-    setCollisions(prev => prev + 1);
-  };
-  
-  // Обработка успешного прохождения препятствия
-  const handleObstaclePassed = () => {
-    updateScore(player.id, 1);
-  };
-  
-  // Обработка сбора звезды
-  const handleStarCollected = () => {
-    setStarsCollected(prev => prev + 1);
-    updateScore(player.id, 3);
-  };
-  
-  // Перемещение корабля влево
-  const moveLeft = () => {
-    if (gameOver || !player.isActive) return;
-    
-    setShip(prev => ({
-      ...prev,
-      lane: Math.max(0, prev.lane - 1)
-    }));
-  };
-  
-  // Перемещение корабля вправо
-  const moveRight = () => {
-    if (gameOver || !player.isActive) return;
-    
-    setShip(prev => ({
-      ...prev,
-      lane: Math.min(2, prev.lane + 1)
-    }));
-  };
-  
-  // Ускорение корабля
-  const startBoost = () => {
-    if (gameOver || !player.isActive) return;
-    
-    setShip(prev => ({
-      ...prev,
-      isBoosting: true
-    }));
-  };
-  
-  // Прекращение ускорения
-  const endBoost = () => {
-    if (gameOver || !player.isActive) return;
-    
-    setShip(prev => ({
-      ...prev,
-      isBoosting: false
-    }));
-  };
-  
-  // Получаем цвет для игрока
-  const getPlayerColor = () => {
-    const colors = ["#FF5252", "#4CAF50", "#2196F3", "#FF9800"];
-    return colors[player.id - 1] || colors[0];
-  };
-  
-  // Стили для области игрока
-  const playerAreaStyle = {
-    backgroundColor: player.isWinner ? "#FFF9C4" : "#000022",
-    borderColor: getPlayerColor(),
-    boxShadow: player.isWinner ? `0 0 20px ${getPlayerColor()}` : "none",
-  };
-  
+
   return (
-    <div 
-      className={`rounded-lg border-4 flex flex-col p-2 transition-all duration-300 ${
-        gameOver && player.isWinner ? "animate-bounce-custom" : ""
-      }`}
-      style={playerAreaStyle}
-    >
-      <div className="flex justify-between items-center mb-2">
-        <div className="text-lg font-bold" style={{ color: getPlayerColor() }}>
-          Игрок {player.id}
-        </div>
-        <div className="text-lg font-bold text-white">
-          {player.score} {player.score === 1 ? "очко" : player.score < 5 ? "очка" : "очков"}
-        </div>
-      </div>
-      
-      {gameOver && player.isWinner && (
-        <div className="text-center mb-2 text-xl font-bold text-yellow-600">
-          ПОБЕДИТЕЛЬ! 🏆
-        </div>
-      )}
-      
-      <div className="flex-1 relative bg-black" style={{ overflow: 'hidden' }}>
-        {/* Звезды в фоне */}
-        {Array.from({ length: 20 }).map((_, i) => (
+    <PlayerArea player={player} title="Космическая гонка" score={distance.toFixed(0)}>
+      <div className="relative w-full h-full bg-indigo-900 overflow-hidden">
+        {/* Звезды на фоне (случайные точки) */}
+        {Array.from({ length: 50 }).map((_, index) => (
           <div 
-            key={`bg-star-${i}`} 
-            className="absolute w-1 h-1 bg-white rounded-full" 
-            style={{ 
-              left: `${Math.random() * 100}%`, 
+            key={index}
+            className="absolute w-1 h-1 bg-white rounded-full"
+            style={{
+              left: `${Math.random() * 100}%`,
               top: `${Math.random() * 100}%`,
               opacity: Math.random() * 0.7 + 0.3
             }}
           />
         ))}
         
-        {/* Полосы движения */}
-        <div className="absolute inset-0 flex">
-          {[0, 1, 2].map(lane => (
-            <div 
-              key={`lane-${lane}`} 
-              className="flex-1 border-x border-gray-800 relative"
-            >
-              {/* Маркеры дистанции */}
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div 
-                  key={`marker-${lane}-${i}`} 
-                  className="absolute w-full h-1 bg-gray-800"
-                  style={{ top: `${i * 25}%` }}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-        
         {/* Корабль игрока */}
         <div 
-          className="absolute w-10 h-10 transition-all duration-150"
-          style={{ 
-            left: `calc(${(ship.lane * 33.33) + 16.665}% - 20px)`, 
-            top: `${ship.position}%`,
-            transform: ship.isBoosting ? 'scale(0.8)' : 'scale(1)'
-          }}
+          ref={shipRef}
+          className="absolute bottom-5 w-8 h-10"
+          style={{ left: `calc(${shipPosition}% - 16px)` }}
         >
-          <div className="w-full h-full flex items-center justify-center">
-            <div
-              className="w-0 h-0 relative"
-              style={{
-                borderLeft: '10px solid transparent',
-                borderRight: '10px solid transparent',
-                borderBottom: `20px solid ${getPlayerColor()}`,
-              }}
-            >
-              {/* Пламя двигателя */}
-              <div
-                className="absolute w-0 h-0"
-                style={{
-                  top: '100%',
-                  left: '-5px',
-                  borderLeft: '5px solid transparent',
-                  borderRight: '5px solid transparent',
-                  borderTop: `${ship.isBoosting ? '15' : '8'}px solid orange`,
-                  opacity: ship.isBoosting ? '1' : '0.7',
-                  transition: 'all 0.1s ease-out'
-                }}
-              />
-            </div>
+          <div className="w-full h-full relative">
+            <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-4 h-8 bg-indigo-400 rounded-t-full" />
+            <div className="absolute bottom-0 left-0 w-8 h-3 bg-indigo-300 rounded-sm" />
+            {isPlaying && (
+              <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 w-2 h-4 bg-orange-500 animate-pulse" />
+            )}
           </div>
         </div>
         
         {/* Препятствия */}
         {obstacles.map(obstacle => (
-          <div
-            key={`obstacle-${obstacle.id}`}
-            className="absolute rounded-full bg-red-500"
-            style={{ 
-              width: `${obstacle.size * 10}px`,
-              height: `${obstacle.size * 10}px`,
-              left: `calc(${(obstacle.lane * 33.33) + 16.665}% - ${obstacle.size * 5}px)`, 
-              top: `${obstacle.position}%`,
-              opacity: obstacle.passed ? 0.3 : 1,
-              transition: 'opacity 0.3s ease-out'
+          <div 
+            id={`obstacle-${player.id}-${obstacle.id}`}
+            key={obstacle.id}
+            className="absolute bg-red-600 rounded-sm"
+            style={{
+              left: `${obstacle.x}%`,
+              top: `${obstacle.y}%`,
+              width: `${obstacle.width}%`,
+              height: `${obstacle.height}%`
             }}
           />
         ))}
         
-        {/* Звезды (бонусы) */}
-        {stars.map(star => (
-          <div
-            key={`star-${star.id}`}
-            className="absolute text-yellow-400 text-2xl"
-            style={{ 
-              left: `calc(${(star.lane * 33.33) + 16.665}% - 10px)`, 
-              top: `${star.position}%`,
+        {/* Собираемые предметы */}
+        {collectibles.map(item => (
+          <div 
+            id={`collectible-${player.id}-${item.id}`}
+            key={item.id}
+            className="absolute w-6 h-6 flex items-center justify-center"
+            style={{
+              left: `calc(${item.x}% - 12px)`,
+              top: `${item.y}%`
             }}
           >
-            ⭐
+            {item.type === 'star' && (
+              <div className="text-2xl animate-pulse">⭐</div>
+            )}
+            {item.type === 'fuel' && (
+              <div className="text-2xl animate-pulse">🔋</div>
+            )}
+            {item.type === 'bonus' && (
+              <div className="text-2xl animate-pulse">💎</div>
+            )}
           </div>
         ))}
+        
+        {/* Счетчик расстояния */}
+        <div className="absolute top-2 left-2 text-white text-sm md:text-base bg-black bg-opacity-50 p-1 rounded">
+          {distance.toFixed(0)} ly
+        </div>
+        
+        {/* Кнопки управления */}
+        {isPlaying && (
+          <div className="absolute bottom-0 w-full flex justify-between px-2 pb-2">
+            <Button 
+              className="h-12 w-12 rounded-full bg-indigo-500 bg-opacity-70 hover:bg-opacity-100"
+              onMouseDown={() => moveShip('left')}
+              onTouchStart={() => moveShip('left')}
+            >
+              ◀
+            </Button>
+            <Button 
+              className="h-12 w-12 rounded-full bg-indigo-500 bg-opacity-70 hover:bg-opacity-100"
+              onMouseDown={() => moveShip('right')}
+              onTouchStart={() => moveShip('right')}
+            >
+              ▶
+            </Button>
+          </div>
+        )}
+        
+        {/* Отображение при остановке игры */}
+        {!isPlaying && player.isActive && !gameOver && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-black bg-opacity-70 p-3 rounded text-white text-center">
+              <div className="text-xl mb-2">Космическая гонка</div>
+              <Button 
+                onClick={() => setIsPlaying(true)}
+                variant="default"
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
+                Поехали!
+              </Button>
+            </div>
+          </div>
+        )}
+        
+        {/* Отображение при конце игры */}
+        {gameOver && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="text-white text-xl">
+              <div>Расстояние: {distance.toFixed(0)} ly</div>
+              {player.isWinner && (
+                <div className="text-yellow-400 text-2xl mt-2 font-bold">Победа!</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-      
-      {/* Кнопки управления */}
-      <div className="grid grid-cols-3 gap-1 mt-2">
-        <Button
-          variant="outline"
-          className="h-12"
-          style={{ borderColor: getPlayerColor() }}
-          disabled={gameOver}
-          onClick={moveLeft}
-        >
-          ⬅️
-        </Button>
-        <Button
-          variant="outline"
-          className="h-12"
-          style={{ borderColor: getPlayerColor() }}
-          disabled={gameOver}
-          onMouseDown={startBoost}
-          onMouseUp={endBoost}
-          onMouseLeave={endBoost}
-          onTouchStart={startBoost}
-          onTouchEnd={endBoost}
-        >
-          🚀
-        </Button>
-        <Button
-          variant="outline"
-          className="h-12"
-          style={{ borderColor: getPlayerColor() }}
-          disabled={gameOver}
-          onClick={moveRight}
-        >
-          ➡️
-        </Button>
-      </div>
-      
-      {/* Статистика */}
-      <div className="text-xs text-gray-400 mt-1 flex justify-between">
-        <div>Звезды: {starsCollected}</div>
-        <div>Дист: {Math.floor(distanceTraveled)} ly</div>
-        <div>Столкн: {collisions}</div>
-      </div>
-    </div>
+    </PlayerArea>
   );
 };
 

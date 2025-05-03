@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import GameControls from "@/components/GameControls";
@@ -31,6 +31,17 @@ const Game = () => {
   const [currentGameId, setCurrentGameId] = useState<string | null>(initialGameId);
   const [isMultiRound, setIsMultiRound] = useState(totalRounds > 1);
   const [showRoundSummary, setShowRoundSummary] = useState(false);
+  
+  // Используем useRef для хранения таймера, чтобы его можно было очистить в любом месте компонента
+  const timerRef = useRef<number | null>(null);
+
+  // Функция для остановки таймера
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
 
   // Загрузка информации о выбранной игре
   useEffect(() => {
@@ -63,7 +74,10 @@ const Game = () => {
     } else {
       setTimeLeft(60);
     }
-  }, [currentGameId, playersCount, currentRound, isMultiRound, roundGames]);
+
+    // Остановим старый таймер при смене игры
+    stopTimer();
+  }, [currentGameId, playersCount, currentRound, isMultiRound, roundGames, stopTimer]);
 
   // Инициализация игроков
   useEffect(() => {
@@ -78,6 +92,7 @@ const Game = () => {
 
   // Обработка завершения раунда
   const endRound = useCallback(() => {
+    stopTimer();
     setGameOver(true);
     
     // Находим победителя раунда
@@ -94,17 +109,18 @@ const Game = () => {
     if (isMultiRound) {
       setShowRoundSummary(true);
     }
-  }, [players, isMultiRound]);
+  }, [players, isMultiRound, stopTimer]);
 
   // Логика таймера
   useEffect(() => {
-    let timer: number | null = null;
+    // Сначала очистим предыдущий таймер
+    stopTimer();
     
     if (gameStarted && !gameOver && timeLeft > 0) {
-      timer = window.setInterval(() => {
+      timerRef.current = window.setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
-            if (timer) clearInterval(timer);
+            stopTimer();
             endRound();
             return 0;
           }
@@ -113,10 +129,11 @@ const Game = () => {
       }, 1000);
     }
     
+    // Очистка таймера при размонтировании компонента
     return () => {
-      if (timer) clearInterval(timer);
+      stopTimer();
     };
-  }, [gameStarted, gameOver, timeLeft, endRound]);
+  }, [gameStarted, gameOver, timeLeft, endRound, stopTimer]);
 
   // Обновление счета игрока
   const updatePlayerScore = useCallback((playerId: number, points: number) => {
@@ -135,6 +152,9 @@ const Game = () => {
 
   // Начало игры
   const startGame = () => {
+    // Остановим предыдущий таймер, если он был
+    stopTimer();
+    
     // Активируем всех игроков
     setPlayers(prev => 
       prev.map(player => ({
@@ -142,6 +162,7 @@ const Game = () => {
         isActive: true
       }))
     );
+    
     setGameStarted(true);
     setGameOver(false);
     
@@ -155,6 +176,9 @@ const Game = () => {
 
   // Начать новый раунд
   const startNewRound = () => {
+    // Остановим предыдущий таймер
+    stopTimer();
+    
     // Если это был последний раунд, то уже не начинаем новый
     if (isMultiRound && currentRound >= totalRounds) {
       return;
@@ -177,6 +201,9 @@ const Game = () => {
 
   // Рестарт игры
   const restartGame = () => {
+    // Остановим предыдущий таймер
+    stopTimer();
+    
     setPlayers(prev => 
       prev.map(player => ({
         id: player.id,
@@ -200,11 +227,15 @@ const Game = () => {
 
   // Выбрать другую игру
   const selectNewGame = () => {
+    // Остановим предыдущий таймер перед переходом на другую страницу
+    stopTimer();
     navigate("/");
   };
 
   // Вернуться на главную
   const goToHome = () => {
+    // Остановим предыдущий таймер перед переходом на другую страницу
+    stopTimer();
     navigate("/");
   };
 
