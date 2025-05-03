@@ -2,8 +2,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import PlayerArea from "@/components/PlayerArea";
 import GameControls from "@/components/GameControls";
+import GameArea from "@/components/GameArea";
 import { getGameById, getRandomGameForPlayerCount } from "@/lib/gameTypes";
 
 interface PlayerState {
@@ -11,7 +11,6 @@ interface PlayerState {
   score: number;
   isActive: boolean;
   isWinner: boolean;
-  targetNumber: number | null;
 }
 
 const Game = () => {
@@ -45,7 +44,7 @@ const Game = () => {
     if (game && game.duration) {
       setTimeLeft(game.duration);
     } else {
-      setTimeLeft(60); // Время по умолчанию
+      setTimeLeft(60);
     }
   }, [gameId, playersCount]);
 
@@ -55,8 +54,7 @@ const Game = () => {
       id: index + 1,
       score: 0,
       isActive: false,
-      isWinner: false,
-      targetNumber: null
+      isWinner: false
     }));
     setPlayers(initialPlayers);
   }, [playersCount]);
@@ -102,13 +100,9 @@ const Game = () => {
     setPlayers(prev => 
       prev.map(player => {
         if (player.id === playerId) {
-          // Генерируем новую цель с гарантией, что она будет в доступном диапазоне
-          // и присутствует на поле
-          const newTargetNumber = Math.floor(Math.random() * 4) + 1;
           return { 
             ...player, 
-            score: player.score + points, 
-            targetNumber: newTargetNumber 
+            score: player.score + points
           };
         } 
         return player;
@@ -118,12 +112,11 @@ const Game = () => {
 
   // Начало игры
   const startGame = () => {
-    // Задаем случайные числа для каждого игрока
+    // Активируем всех игроков
     setPlayers(prev => 
       prev.map(player => ({
         ...player,
-        isActive: true,
-        targetNumber: Math.floor(Math.random() * 4) + 1
+        isActive: true
       }))
     );
     setGameStarted(true);
@@ -154,8 +147,7 @@ const Game = () => {
       prev.map(player => ({
         ...player,
         isActive: true,
-        isWinner: false,
-        targetNumber: Math.floor(Math.random() * 4) + 1
+        isWinner: false
       }))
     );
   };
@@ -167,8 +159,7 @@ const Game = () => {
         id: player.id,
         score: 0,
         isActive: false,
-        isWinner: false,
-        targetNumber: null
+        isWinner: false
       }))
     );
     setRound(1);
@@ -261,8 +252,9 @@ const Game = () => {
         
         <div className={`flex-1 grid ${getGridTemplateByPlayers(playersCount)} gap-2 p-2`}>
           {players.map((player) => (
-            <PlayerArea
+            <GameArea
               key={player.id}
+              gameId={currentGame?.id || 'number-tap'}
               player={player}
               updateScore={updatePlayerScore}
               gameOver={gameOver}
