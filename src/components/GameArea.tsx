@@ -10,6 +10,11 @@ import ReactionTestGame from "@/components/games/ReactionTestGame";
 import WordScrambleGame from "@/components/games/WordScrambleGame";
 import RhythmTapGame from "@/components/games/RhythmTapGame";
 import CardMemoryGame from "@/components/games/CardMemoryGame";
+import SpaceRaceGame from "@/components/games/SpaceRaceGame";
+import MoleCatcherGame from "@/components/games/MoleCatcherGame";
+import ColorMixerGame from "@/components/games/ColorMixerGame";
+import WordChainGame from "@/components/games/WordChainGame";
+import MazeRunnerGame from "@/components/games/MazeRunnerGame";
 
 interface GameAreaProps {
   gameId: string;
@@ -47,9 +52,30 @@ const GameArea = ({ gameId, player, updateScore, gameOver }: GameAreaProps) => {
         return <RhythmTapGame player={player} updateScore={updateScore} gameOver={gameOver} />;
       case 'card-memory':
         return <CardMemoryGame player={player} updateScore={updateScore} gameOver={gameOver} />;
+      case 'space-race':
+        return <SpaceRaceGame player={player} updateScore={updateScore} gameOver={gameOver} />;
+      case 'mole-catcher':
+        return <MoleCatcherGame player={player} updateScore={updateScore} gameOver={gameOver} />;
+      case 'color-mixer':
+        return <ColorMixerGame player={player} updateScore={updateScore} gameOver={gameOver} />;
+      case 'word-chain':
+        return <WordChainGame player={player} updateScore={updateScore} gameOver={gameOver} />;
+      case 'maze-runner':
+        return <MazeRunnerGame player={player} updateScore={updateScore} gameOver={gameOver} />;
       default:
-        // Для всех остальных игр, которые еще не реализованы, возвращаем NumberTapGame как запасной вариант
-        return <NumberTapGame player={player} updateScore={updateScore} gameOver={gameOver} />;
+        // Для всех остальных игр, которые еще не реализованы, каждый раз выбираем случайную уже реализованную игру
+        const implementedGames = [
+          <SpaceRaceGame player={player} updateScore={updateScore} gameOver={gameOver} />,
+          <MoleCatcherGame player={player} updateScore={updateScore} gameOver={gameOver} />,
+          <ColorMixerGame player={player} updateScore={updateScore} gameOver={gameOver} />,
+          <WordChainGame player={player} updateScore={updateScore} gameOver={gameOver} />,
+          <MazeRunnerGame player={player} updateScore={updateScore} gameOver={gameOver} />
+        ];
+        
+        // Используем player.id как семя для псевдослучайности, 
+        // чтобы у одного игрока была одна игра, а не каждый раз разная
+        const randomIndex = (player.id + gameId.length) % implementedGames.length;
+        return implementedGames[randomIndex];
     }
   };
 
