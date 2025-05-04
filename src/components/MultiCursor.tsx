@@ -21,6 +21,7 @@ const MultiCursor = ({ className }: MultiCursorProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const deviceIdRef = useRef<Map<number, string>>(new Map());
   const cursorColorsRef = useRef<Map<string, string>>(new Map());
+  const pointerIdsRef = useRef<Set<number>>(new Set());
   
   // Функция для генерации случайного цвета
   const getRandomColor = () => {
@@ -42,6 +43,7 @@ const MultiCursor = ({ className }: MultiCursorProps) => {
     if (!deviceIdRef.current.has(pointerId)) {
       const newId = `device-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
       deviceIdRef.current.set(pointerId, newId);
+      pointerIdsRef.current.add(pointerId);
       
       // Назначаем цвет для нового устройства
       if (!cursorColorsRef.current.has(newId)) {
@@ -77,13 +79,23 @@ const MultiCursor = ({ className }: MultiCursorProps) => {
         
         // Обновляем состояние курсоров
         setCursors(prev => {
-          // Фильтруем устаревшие курсоры (более 2 секунд)
+          // Находим курсор для данного deviceId
+          const cursorIndex = prev.findIndex(c => c.deviceId === deviceId);
           const now = Date.now();
-          const filtered = prev.filter(c => 
-            (c.deviceId !== deviceId) && (now - c.timestamp < 2000)
-          );
           
-          // Добавляем новый курсор
+          // Удаляем устаревшие курсоры
+          const filtered = prev.filter(c => now - c.timestamp < 2000);
+          
+          // Если курсор существует, обновляем его
+          if (cursorIndex !== -1) {
+            return filtered.map(c => 
+              c.deviceId === deviceId 
+                ? { ...c, x, y, timestamp: now } 
+                : c
+            );
+          }
+          
+          // Если курсора нет, добавляем новый
           return [...filtered, {
             id: `cursor-${deviceId}`,
             x,
@@ -93,6 +105,14 @@ const MultiCursor = ({ className }: MultiCursorProps) => {
             timestamp: now
           }];
         });
+      }
+    };
+    
+    // Обработчик начала взаимодействия с указателем
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
+        // Убедимся, что у нас есть информация о новом устройстве
+        getDeviceId(event.pointerId);
       }
     };
     
@@ -109,11 +129,26 @@ const MultiCursor = ({ className }: MultiCursorProps) => {
         setCursors(prev => prev.filter(c => c.deviceId !== deviceId));
       }
     };
+    
+    // Обработчик для отключения устройства
+    const handlePointerCancel = (event: PointerEvent) => {
+      const deviceId = deviceIdRef.current.get(event.pointerId);
+      if (deviceId) {
+        deviceIdRef.current.delete(event.pointerId);
+        pointerIdsRef.current.delete(event.pointerId);
+        setCursors(prev => prev.filter(c => c.deviceId !== deviceId));
+      }
+    };
 
     // Добавляем слушатели событий
     window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('blur', handleBlur);
     window.addEventListener('pointerleave', handlePointerLeave);
+    window.addEventListener('pointercancel', handlePointerCancel);
+
+    // Для отладки - вывести информацию о подключенных устройствах
+    console.log('Активные указатели:', pointerIdsRef.current.size);
 
     // Периодическая очистка "призрачных" курсоров
     const cleanupInterval = setInterval(() => {
@@ -126,8 +161,10 @@ const MultiCursor = ({ className }: MultiCursorProps) => {
     // Очистка при размонтировании
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('pointerleave', handlePointerLeave);
+      window.removeEventListener('pointercancel', handlePointerCancel);
       clearInterval(cleanupInterval);
     };
   }, []);
@@ -165,10 +202,15 @@ const MultiCursor = ({ className }: MultiCursorProps) => {
             className="absolute top-5 left-5 bg-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold border-2"
             style={{ borderColor: cursor.color, color: cursor.color }}
           >
-            {Array.from(cursorColorsRef.current.keys()).indexOf(cursor.deviceId) + 1}
+            {Array.from(deviceIdRef.current.values()).indexOf(cursor.deviceId) + 1}
           </span>
         </div>
       ))}
+      
+      {/* Отладочная информация - количество подключенных устройств */}
+      <div className="absolute bottom-2 right-2 bg-black/50 text-white px-2 py-1 text-xs rounded">
+        Устройств: {pointerIdsRef.current.size}
+      </div>
     </div>
   );
 };
