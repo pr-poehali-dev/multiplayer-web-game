@@ -32,40 +32,48 @@ const Game = () => {
   const [isMultiRound, setIsMultiRound] = useState(totalRounds > 1);
   const [showRoundSummary, setShowRoundSummary] = useState(false);
   
-  // Используем useRef для хранения таймера, чтобы его можно было очистить в любом месте компонента
-  const timerRef = useRef<number | null>(null);
-  const timerActiveRef = useRef<boolean>(false);
+  // Простой дебаг режим для отладки таймера
+  const debugRef = useRef<HTMLDivElement>(null);
+  
+  // Исправление: Используем нативный JavaScript setInterval вместо window.setInterval
+  // и храним ID в обычной переменной
+  const [timerId, setTimerId] = useState<number | null>(null);
 
-  // Функция для остановки таймера
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-      timerActiveRef.current = false;
-      console.log("Таймер остановлен");
+  // Обработка завершения раунда
+  const endRound = useCallback(() => {
+    if (timerId !== null) {
+      clearInterval(timerId);
+      setTimerId(null);
     }
-  }, []);
+    
+    setGameOver(true);
+    
+    // Находим победителя раунда
+    const maxScore = Math.max(...players.map(p => p.score));
+    
+    setPlayers(prev => 
+      prev.map(player => ({
+        ...player,
+        isWinner: player.score === maxScore && maxScore > 0
+      }))
+    );
+    
+    // Если это многораундовый режим, показываем итоги раунда
+    if (isMultiRound) {
+      setShowRoundSummary(true);
+    }
+  }, [players, isMultiRound, timerId]);
 
-  // Функция для запуска таймера
-  const startTimer = useCallback(() => {
-    // Уже запущен
-    if (timerActiveRef.current) return;
-    
-    console.log("Запускаем таймер");
-    timerActiveRef.current = true;
-    
-    timerRef.current = window.setInterval(() => {
-      console.log("Тик таймера");
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          stopTimer();
-          endRound();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
+  // Инициализация игроков
+  useEffect(() => {
+    const initialPlayers = Array.from({ length: playersCount }).map((_, index) => ({
+      id: index + 1,
+      score: 0,
+      isActive: false,
+      isWinner: false
+    }));
+    setPlayers(initialPlayers);
+  }, [playersCount]);
 
   // Загрузка информации о выбранной игре
   useEffect(() => {
@@ -99,60 +107,58 @@ const Game = () => {
       setTimeLeft(60);
     }
 
-    // Только останавливаем старый таймер при смене игры
-    stopTimer();
-  }, [currentGameId, playersCount, currentRound, isMultiRound, roundGames, stopTimer]);
-
-  // Инициализация игроков
-  useEffect(() => {
-    const initialPlayers = Array.from({ length: playersCount }).map((_, index) => ({
-      id: index + 1,
-      score: 0,
-      isActive: false,
-      isWinner: false
-    }));
-    setPlayers(initialPlayers);
-  }, [playersCount]);
-
-  // Обработка завершения раунда
-  const endRound = useCallback(() => {
-    stopTimer();
-    setGameOver(true);
-    
-    // Находим победителя раунда
-    const maxScore = Math.max(...players.map(p => p.score));
-    
-    setPlayers(prev => 
-      prev.map(player => ({
-        ...player,
-        isWinner: player.score === maxScore && maxScore > 0
-      }))
-    );
-    
-    // Если это многораундовый режим, показываем итоги раунда
-    if (isMultiRound) {
-      setShowRoundSummary(true);
+    // Остановим старый таймер при смене игры
+    if (timerId !== null) {
+      clearInterval(timerId);
+      setTimerId(null);
     }
-  }, [players, isMultiRound, stopTimer]);
+  }, [currentGameId, playersCount, currentRound, isMultiRound, roundGames, timerId]);
 
-  // Логика таймера - ключевой эффект, исправляем тут!
+  // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Запуск таймера в отдельном эффекте без зависимости от timeLeft
   useEffect(() => {
-    console.log("Состояние игры:", { gameStarted, gameOver, timeLeft });
-    
+    // Проверяем условия запуска таймера
     if (gameStarted && !gameOver && timeLeft > 0) {
-      console.log("Условия для запуска таймера выполнены");
-      // Запускаем таймер только когда все условия соблюдены
-      startTimer();
+      // Проверяем, не запущен ли уже таймер
+      if (timerId === null) {
+        // Запускаем новый таймер
+        const id = setInterval(() => {
+          setTimeLeft(prevTime => {
+            if (prevTime <= 1) {
+              // Если время закончилось, останавливаем таймер и завершаем раунд
+              clearInterval(id);
+              endRound();
+              return 0;
+            }
+            return prevTime - 1;
+          });
+        }, 1000);
+        
+        // Сохраняем ID таймера
+        setTimerId(id);
+        
+        if (debugRef.current) {
+          debugRef.current.textContent = `Таймер запущен: ${id}`;
+        }
+      }
     } else {
-      // Останавливаем таймер если игра закончена или не запущена
-      stopTimer();
+      // Если игра остановлена или закончена, останавливаем таймер
+      if (timerId !== null) {
+        clearInterval(timerId);
+        setTimerId(null);
+        
+        if (debugRef.current) {
+          debugRef.current.textContent = "Таймер остановлен";
+        }
+      }
     }
     
-    // Очистка таймера при размонтировании компонента
+    // Очистка при размонтировании
     return () => {
-      stopTimer();
+      if (timerId !== null) {
+        clearInterval(timerId);
+      }
     };
-  }, [gameStarted, gameOver, startTimer, stopTimer]);
+  }, [gameStarted, gameOver, endRound, timerId]);
 
   // Обновление счета игрока
   const updatePlayerScore = useCallback((playerId: number, points: number) => {
@@ -171,10 +177,11 @@ const Game = () => {
 
   // Начало игры
   const startGame = () => {
-    console.log("Начало игры");
-    
-    // Останавливаем предыдущий таймер если он запущен
-    stopTimer();
+    // Останавливаем предыдущий таймер если он есть
+    if (timerId !== null) {
+      clearInterval(timerId);
+      setTimerId(null);
+    }
     
     // Активируем всех игроков
     setPlayers(prev => 
@@ -191,18 +198,17 @@ const Game = () => {
       setTimeLeft(60);
     }
     
-    // ВАЖНО: Сначала устанавливаем все остальные состояния, 
-    // а запуск игры делаем последним, чтобы таймер запустился после всех изменений
     setGameOver(false);
     setGameStarted(true);
   };
 
   // Начать новый раунд
   const startNewRound = () => {
-    console.log("Начало нового раунда");
-    
-    // Остановим предыдущий таймер
-    stopTimer();
+    // Останавливаем предыдущий таймер
+    if (timerId !== null) {
+      clearInterval(timerId);
+      setTimerId(null);
+    }
     
     // Если это был последний раунд, то уже не начинаем новый
     if (isMultiRound && currentRound >= totalRounds) {
@@ -229,16 +235,16 @@ const Game = () => {
       setTimeLeft(60);
     }
     
-    // ВАЖНО: Сброс gameOver в последнюю очередь, чтобы запустить таймер
     setGameOver(false);
   };
 
   // Рестарт игры
   const restartGame = () => {
-    console.log("Перезапуск игры");
-    
-    // Остановим предыдущий таймер
-    stopTimer();
+    // Останавливаем предыдущий таймер
+    if (timerId !== null) {
+      clearInterval(timerId);
+      setTimerId(null);
+    }
     
     setPlayers(prev => 
       prev.map(player => ({
@@ -249,6 +255,7 @@ const Game = () => {
       }))
     );
     setCurrentRound(1);
+    setGameOver(false);
     setShowRoundSummary(false);
     
     // Устанавливаем время на основе выбранной игры
@@ -258,22 +265,26 @@ const Game = () => {
       setTimeLeft(60);
     }
     
-    // ВАЖНО: Сброс gameOver и запуск игры в конце
-    setGameOver(false);
     setGameStarted(true);
   };
 
   // Выбрать другую игру
   const selectNewGame = () => {
-    // Остановим предыдущий таймер перед переходом на другую страницу
-    stopTimer();
+    // Останавливаем предыдущий таймер перед переходом на другую страницу
+    if (timerId !== null) {
+      clearInterval(timerId);
+      setTimerId(null);
+    }
     navigate("/");
   };
 
   // Вернуться на главную
   const goToHome = () => {
-    // Остановим предыдущий таймер перед переходом на другую страницу
-    stopTimer();
+    // Останавливаем предыдущий таймер перед переходом на другую страницу
+    if (timerId !== null) {
+      clearInterval(timerId);
+      setTimerId(null);
+    }
     navigate("/");
   };
 
@@ -441,6 +452,14 @@ const Game = () => {
           onRestart={restartGame}
           onHome={goToHome}
         />
+        
+        {/* Дебаг панель для таймера - можно убрать после исправления */}
+        <div 
+          ref={debugRef} 
+          className="bg-gray-200 text-xs p-1 text-center text-gray-600"
+        >
+          {timerId ? `Активный таймер: ${timerId}` : 'Таймер не активен'} | Время: {timeLeft}
+        </div>
         
         <div className={`flex-1 grid ${getGridTemplateByPlayers(playersCount)} gap-2 p-2`}>
           {players.map((player) => (

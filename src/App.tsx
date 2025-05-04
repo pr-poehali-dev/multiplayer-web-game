@@ -1,27 +1,25 @@
 
-import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import './App.css';
-
-// Ленивая загрузка компонентов страниц
-const Index = lazy(() => import('./pages/Index'));
-const Game = lazy(() => import('./pages/Game'));
-const RoundSetup = lazy(() => import('./pages/RoundSetup'));
-const NotFound = lazy(() => import('./pages/NotFound'));
+import { useState } from 'react'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import './App.css'
+import Index from './pages/Index'
+import Game from './pages/Game'
+import NotFound from './pages/NotFound'
+import RoundSetup from './pages/RoundSetup'
+import MultiCursor from './components/MultiCursor'
 
 function App() {
   return (
     <Router>
-      <Suspense fallback={<div className="flex items-center justify-center h-screen">Загрузка...</div>}>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/game" element={<Game />} />
-          <Route path="/rounds" element={<RoundSetup />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
+      <MultiCursor />
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/game" element={<Game />} />
+        <Route path="/round-setup" element={<RoundSetup />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
     </Router>
-  );
+  )
 }
 
-export default App;
+export default App
