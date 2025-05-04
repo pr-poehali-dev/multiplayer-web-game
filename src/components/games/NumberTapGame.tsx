@@ -3,27 +3,23 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
 interface NumberTapGameProps {
-  player: {
-    id: number;
-    score: number;
-    isActive: boolean;
-    isWinner: boolean;
-  };
+  playerId: number;
   updateScore: (playerId: number, points: number) => void;
-  gameOver: boolean;
+  gameOver?: boolean;
 }
 
-const NumberTapGame = ({ player, updateScore, gameOver }: NumberTapGameProps) => {
+const NumberTapGame = ({ playerId, updateScore, gameOver = false }: NumberTapGameProps) => {
   const [targetNumber, setTargetNumber] = useState<number | null>(null);
   const [buttonsGrid, setButtonsGrid] = useState<number[]>([]);
   const [tapsCount, setTapsCount] = useState(0);
+  const [score, setScore] = useState(0);
 
   // Инициализация и обновление целевого числа при первом рендере
   useEffect(() => {
-    if (player.isActive && !gameOver && targetNumber === null) {
+    if (!gameOver && targetNumber === null) {
       generateNewTarget();
     }
-  }, [player.isActive, gameOver]);
+  }, [gameOver]);
 
   // Генерация нового целевого числа
   const generateNewTarget = () => {
@@ -60,14 +56,16 @@ const NumberTapGame = ({ player, updateScore, gameOver }: NumberTapGameProps) =>
 
   // Обработчик нажатия на кнопку
   const handleButtonClick = (value: number) => {
-    if (gameOver || !player.isActive || targetNumber === null) return;
+    if (gameOver || targetNumber === null) return;
     
     setTapsCount(prev => prev + 1);
     
     // Если игрок нажал на правильное число
     if (value === targetNumber) {
       // Добавляем очки и задаем новую цель
-      updateScore(player.id, 1);
+      const newScore = score + 1;
+      setScore(newScore);
+      updateScore(playerId, 1);
       generateNewTarget();
     }
   };
@@ -75,29 +73,26 @@ const NumberTapGame = ({ player, updateScore, gameOver }: NumberTapGameProps) =>
   // Получаем цвет для игрока
   const getPlayerColor = () => {
     const colors = ["#FF5252", "#4CAF50", "#2196F3", "#FF9800"];
-    return colors[player.id - 1] || colors[0];
+    return colors[playerId - 1] || colors[0];
   };
 
   // Стили для области игрока
   const playerAreaStyle = {
-    backgroundColor: player.isWinner ? "#FFF9C4" : "white",
+    backgroundColor: "white",
     borderColor: getPlayerColor(),
-    boxShadow: player.isWinner ? `0 0 20px ${getPlayerColor()}` : "none",
   };
 
   return (
     <div 
-      className={`rounded-lg border-4 flex flex-col p-2 transition-all duration-300 ${
-        gameOver && player.isWinner ? "animate-bounce-custom" : ""
-      }`}
+      className="rounded-lg flex flex-col p-2 transition-all duration-300 h-full"
       style={playerAreaStyle}
     >
       <div className="flex justify-between items-center mb-2">
         <div className="text-lg font-bold" style={{ color: getPlayerColor() }}>
-          Игрок {player.id}
+          Игрок {playerId}
         </div>
         <div className="text-lg font-bold">
-          {player.score} {player.score === 1 ? "очко" : player.score < 5 ? "очка" : "очков"}
+          {score} {score === 1 ? "очко" : score < 5 ? "очка" : "очков"}
         </div>
       </div>
       
@@ -107,16 +102,10 @@ const NumberTapGame = ({ player, updateScore, gameOver }: NumberTapGameProps) =>
         </div>
       )}
       
-      {gameOver && player.isWinner && (
-        <div className="text-center mb-2 text-xl font-bold text-yellow-600">
-          ПОБЕДИТЕЛЬ! 🏆
-        </div>
-      )}
-      
       <div className="grid grid-cols-3 gap-2 flex-1">
         {buttonsGrid.map((value, index) => (
           <Button
-            key={`${player.id}-${index}`}
+            key={`${playerId}-${index}`}
             className="h-full w-full text-2xl font-bold"
             variant={value === targetNumber ? "default" : "outline"}
             style={{
